@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "psr-sb-gui"
+version = "0.1.0"
+description = "Wizard-style GUI for GBT pulsar scheduling blocks"
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6>=6.5",
+]
+
+[project.scripts]
+psr-sb-gui = "psr_sb_gui.app:main"
+
+[tool.setuptools.packages.find]
+include = ["psr_sb_gui*"]
