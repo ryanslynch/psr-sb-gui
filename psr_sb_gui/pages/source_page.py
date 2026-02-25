@@ -44,6 +44,17 @@ class CoordSystemDelegate(QStyledItemDelegate):
 
 
 class SourcePage(QWizardPage):
+    # Column indices
+    COL_CHECK = 0
+    COL_NAME = 1
+    COL_COORDSYS = 2
+    COL_COORD1 = 3
+    COL_COORD2 = 4
+    COL_SCAN = 5
+
+    # Characters not allowed in Linux filenames or that require escaping
+    _INVALID_NAME_CHARS = set(' #/\\\0\'"!$&()*;<>?[]`{|}~^')
+
     def __init__(self, observation: ObservationModel, parent=None):
         super().__init__(parent)
         self.observation = observation
@@ -53,16 +64,21 @@ class SourcePage(QWizardPage):
         layout = QVBoxLayout()
 
         # --- Source table ---
-        self.table = QTableWidget(0, 5)
+        self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
-            ["Name", "Coord System", "Coord 1 (RA/l)", "Coord 2 (Dec/b)", "Scan Length (s)"]
+            ["", "Name", "Coord System", "Coord 1 (RA/l)", "Coord 2 (Dec/b)", "Scan Length (s)"]
         )
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.DoubleClicked)
-        self.table.setItemDelegateForColumn(1, CoordSystemDelegate(self.table))
+        self.table.setItemDelegateForColumn(self.COL_COORDSYS, CoordSystemDelegate(self.table))
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.Stretch)
+        header.setSectionResizeMode(self.COL_CHECK, QHeaderView.Fixed)
+        self.table.setColumnWidth(self.COL_CHECK, 30)
+        for col in range(self.COL_NAME, self.COL_SCAN + 1):
+            header.setSectionResizeMode(col, QHeaderView.Stretch)
+        self._header_checked = False
+        header.sectionClicked.connect(self._on_header_clicked)
         self.table.currentCellChanged.connect(lambda row, *_: self._on_row_selected(row))
         self._editing_blocked = False
         self._pre_edit_value = ""
@@ -82,9 +98,11 @@ class SourcePage(QWizardPage):
 
         row1.addWidget(QLabel("Coord System:"))
         self.coord_system_combo = QComboBox()
+        self._coord_system_dirty = False
         for cs in CoordSystem:
             self.coord_system_combo.addItem(cs.value, cs)
         self.coord_system_combo.currentIndexChanged.connect(self._update_coord_placeholders)
+        self.coord_system_combo.currentIndexChanged.connect(self._mark_coord_system_dirty)
         row1.addWidget(self.coord_system_combo)
         form_layout.addLayout(row1)
 
@@ -109,25 +127,35 @@ class SourcePage(QWizardPage):
         self._update_coord_placeholders()
 
         # --- Action buttons ---
-        button_layout = QHBoxLayout()
+        button_row1 = QHBoxLayout()
         self.add_btn = QPushButton("Add Source")
         self.add_btn.clicked.connect(self._add_or_update_source)
-        button_layout.addWidget(self.add_btn)
-
-        self.remove_btn = QPushButton("Remove Selected")
-        self.remove_btn.clicked.connect(self._remove_selected)
-        button_layout.addWidget(self.remove_btn)
+        button_row1.addWidget(self.add_btn)
 
         self.import_btn = QPushButton("Import from Catalog...")
         self.import_btn.clicked.connect(self._import_catalog)
-        button_layout.addWidget(self.import_btn)
+        button_row1.addWidget(self.import_btn)
 
         self.clear_form_btn = QPushButton("Clear Form")
         self.clear_form_btn.clicked.connect(self._clear_form)
-        button_layout.addWidget(self.clear_form_btn)
+        button_row1.addWidget(self.clear_form_btn)
 
-        layout.addLayout(button_layout)
+        layout.addLayout(button_row1)
+
+        button_row2 = QHBoxLayout()
+        self.apply_checked_btn = QPushButton("Apply to Selected")
+        self.apply_checked_btn.clicked.connect(self._apply_to_checked)
+        button_row2.addWidget(self.apply_checked_btn)
+
+        self.remove_checked_btn = QPushButton("Remove Selected")
+        self.remove_checked_btn.clicked.connect(self._remove_checked)
+        button_row2.addWidget(self.remove_checked_btn)
+
+        layout.addLayout(button_row2)
         self.setLayout(layout)
+
+    def _mark_coord_system_dirty(self):
+        self._coord_system_dirty = True
 
     def _update_coord_placeholders(self):
         cs = self.coord_system_combo.currentData()
@@ -141,30 +169,47 @@ class SourcePage(QWizardPage):
     def _clear_form(self):
         self.name_edit.clear()
         self.coord_system_combo.setCurrentIndex(0)
+        self._coord_system_dirty = False
         self.coord1_edit.clear()
         self.coord2_edit.clear()
         self.scan_length_edit.clear()
         self.table.clearSelection()
+        self.table.setCurrentCell(-1, -1)
 
     def _on_row_selected(self, row):
         if row < 0:
             return
-        self.name_edit.setText(self.table.item(row, 0).text())
-        # Find the matching CoordSystem enum
-        cs_text = self.table.item(row, 1).text()
+        self.name_edit.setText(self.table.item(row, self.COL_NAME).text())
+        cs_text = self.table.item(row, self.COL_COORDSYS).text()
         for i in range(self.coord_system_combo.count()):
             if self.coord_system_combo.itemText(i) == cs_text:
                 self.coord_system_combo.setCurrentIndex(i)
                 break
-        self.coord1_edit.setText(self.table.item(row, 2).text())
-        self.coord2_edit.setText(self.table.item(row, 3).text())
-        self.scan_length_edit.setText(self.table.item(row, 4).text())
+        self._coord_system_dirty = False
+        self.coord1_edit.setText(self.table.item(row, self.COL_COORD1).text())
+        self.coord2_edit.setText(self.table.item(row, self.COL_COORD2).text())
+        self.scan_length_edit.setText(self.table.item(row, self.COL_SCAN).text())
 
-    # Characters not allowed in Linux filenames or that require escaping
-    _INVALID_NAME_CHARS = set(' #/\\\0\'"!$&()*;<>?[]`{|}~^')
+    def _on_header_clicked(self, section):
+        if section != self.COL_CHECK:
+            return
+        self._header_checked = not self._header_checked
+        for row in range(self.table.rowCount()):
+            self._set_row_checked(row, self._header_checked)
 
-    # Column indices
-    COL_NAME, COL_COORDSYS, COL_COORD1, COL_COORD2, COL_SCAN = range(5)
+    def _checked_rows(self):
+        """Return list of row indices where checkbox is checked."""
+        rows = []
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, self.COL_CHECK)
+            if item and item.checkState() == Qt.Checked:
+                rows.append(row)
+        return rows
+
+    def _set_row_checked(self, row, checked):
+        item = self.table.item(row, self.COL_CHECK)
+        if item:
+            item.setCheckState(Qt.Checked if checked else Qt.Unchecked)
 
     def _get_coord_system_for_row(self, row):
         """Return the CoordSystem enum for a table row."""
@@ -239,12 +284,16 @@ class SourcePage(QWizardPage):
 
     def _on_cell_double_clicked(self, row, col):
         """Capture the current cell value before editing begins."""
+        if col == self.COL_CHECK:
+            return
         item = self.table.item(row, col)
         self._pre_edit_value = item.text() if item else ""
 
     def _on_cell_edited(self, row, col):
         """Called when a cell value changes. Validates and reverts if invalid."""
         if self._editing_blocked:
+            return
+        if col == self.COL_CHECK:
             return
         item = self.table.item(row, col)
         if item is None:
@@ -314,14 +363,12 @@ class SourcePage(QWizardPage):
             if not (-90 <= b_val <= 90):
                 return "Galactic latitude (b) must be between -90 and +90 degrees."
         else:
-            # RA must be in sexagesimal HH:MM:SS.SS format
             if not re.match(r"^\d{1,2}:\d{2}(:\d{2}(\.\d+)?)?$", coord1):
                 return "RA must be in HH:MM:SS.SS format (e.g. 17:13:49.53)."
             ra_hours = self._parse_sexagesimal(coord1)
             if ra_hours is None or not (0 <= ra_hours < 24):
                 return "RA must be between 00:00:00 and 23:59:59.99."
 
-            # Dec must be in sexagesimal ±DD:MM:SS.SS format
             if not re.match(r"^[+-]?\d{1,2}:\d{2}(:\d{2}(\.\d+)?)?$", coord2):
                 return "Dec must be in \u00b1DD:MM:SS.SS format (e.g. +07:47:37.48)."
             dec_deg = self._parse_sexagesimal(coord2)
@@ -350,14 +397,11 @@ class SourcePage(QWizardPage):
         coord1 = self.coord1_edit.text().strip()
         coord2 = self.coord2_edit.text().strip()
         scan_text = self.scan_length_edit.text().strip()
-        scan_length = float(scan_text) if scan_text else None
 
         selected_row = self.table.currentRow()
         if selected_row >= 0:
-            # Update existing row
             self._set_table_row(selected_row, name, cs.value, coord1, coord2, scan_text)
         else:
-            # Add new row
             row = self.table.rowCount()
             self.table.insertRow(row)
             self._set_table_row(row, name, cs.value, coord1, coord2, scan_text)
@@ -367,19 +411,124 @@ class SourcePage(QWizardPage):
 
     def _set_table_row(self, row, name, cs_text, coord1, coord2, scan_text):
         self._editing_blocked = True
-        self.table.setItem(row, 0, QTableWidgetItem(name))
-        self.table.setItem(row, 1, QTableWidgetItem(cs_text))
-        self.table.setItem(row, 2, QTableWidgetItem(coord1))
-        self.table.setItem(row, 3, QTableWidgetItem(coord2))
-        self.table.setItem(row, 4, QTableWidgetItem(scan_text))
+        # Checkbox column
+        check_item = self.table.item(row, self.COL_CHECK)
+        if check_item is None:
+            check_item = QTableWidgetItem()
+            check_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+            check_item.setCheckState(Qt.Unchecked)
+            self.table.setItem(row, self.COL_CHECK, check_item)
+        # Data columns
+        self.table.setItem(row, self.COL_NAME, QTableWidgetItem(name))
+        self.table.setItem(row, self.COL_COORDSYS, QTableWidgetItem(cs_text))
+        self.table.setItem(row, self.COL_COORD1, QTableWidgetItem(coord1))
+        self.table.setItem(row, self.COL_COORD2, QTableWidgetItem(coord2))
+        self.table.setItem(row, self.COL_SCAN, QTableWidgetItem(scan_text))
         self._editing_blocked = False
 
-    def _remove_selected(self):
-        row = self.table.currentRow()
-        if row >= 0:
+    def _apply_to_checked(self):
+        checked = self._checked_rows()
+        if not checked:
+            QMessageBox.information(self, "Apply to Selected", "No sources are checked.")
+            return
+
+        name = self.name_edit.text().strip()
+        coord1 = self.coord1_edit.text().strip()
+        coord2 = self.coord2_edit.text().strip()
+        scan_text = self.scan_length_edit.text().strip()
+        apply_coord_system = self._coord_system_dirty
+        apply_name = bool(name)
+
+        # Nothing to apply?
+        if not any([apply_name, apply_coord_system, coord1, coord2, scan_text]):
+            QMessageBox.information(
+                self, "Apply to Selected",
+                "All form fields are empty. Enter values in the form fields you want to apply."
+            )
+            return
+
+        # Validate non-empty fields using the first checked row as reference
+        ref_row = checked[0]
+        if apply_name:
+            error = self._validate_cell(ref_row, self.COL_NAME, name)
+            if error:
+                QMessageBox.warning(self, "Validation Error", error)
+                return
+        if coord1:
+            # Need coord system context — validate per-row later
+            pass
+        if coord2:
+            pass
+        if scan_text:
+            error = self._validate_cell(ref_row, self.COL_SCAN, scan_text)
+            if error:
+                QMessageBox.warning(self, "Validation Error", error)
+                return
+
+        # Warn about duplicate names
+        if apply_name and len(checked) > 1:
+            reply = QMessageBox.warning(
+                self, "Duplicate Names",
+                f"This will set {len(checked)} sources to the same name \"{name}\", "
+                "creating duplicates. Continue?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply == QMessageBox.No:
+                apply_name = False
+
+        # Apply to each checked row
+        self._editing_blocked = True
+        for row in checked:
+            if apply_name:
+                self.table.item(row, self.COL_NAME).setText(name)
+            if apply_coord_system:
+                cs_text = self.coord_system_combo.currentData().value
+                self.table.item(row, self.COL_COORDSYS).setText(cs_text)
+            if coord1:
+                error = self._validate_cell(row, self.COL_COORD1, coord1)
+                if error:
+                    self._editing_blocked = False
+                    QMessageBox.warning(
+                        self, "Validation Error",
+                        f"Row {row + 1}: {error}"
+                    )
+                    return
+                self.table.item(row, self.COL_COORD1).setText(coord1)
+            if coord2:
+                error = self._validate_cell(row, self.COL_COORD2, coord2)
+                if error:
+                    self._editing_blocked = False
+                    QMessageBox.warning(
+                        self, "Validation Error",
+                        f"Row {row + 1}: {error}"
+                    )
+                    return
+                self.table.item(row, self.COL_COORD2).setText(coord2)
+            if scan_text:
+                self.table.item(row, self.COL_SCAN).setText(scan_text)
+        self._editing_blocked = False
+        self.completeChanged.emit()
+
+    def _remove_checked(self):
+        checked = self._checked_rows()
+        if not checked:
+            QMessageBox.information(self, "Remove Selected", "No sources are checked.")
+            return
+
+        reply = QMessageBox.question(
+            self, "Remove Selected",
+            f"Remove {len(checked)} checked source(s)?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        for row in reversed(checked):
             self.table.removeRow(row)
-            self._clear_form()
-            self.completeChanged.emit()
+        self._clear_form()
+        self.completeChanged.emit()
 
     def _import_catalog(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -413,7 +562,12 @@ class SourcePage(QWizardPage):
         )
 
     def _parse_catalog(self, file_path):
-        """Parse a GBT/Astrid catalog file."""
+        """Parse a GBT/Astrid catalog file.
+
+        Uses the HEAD directive to identify which columns contain the source
+        name and coordinates.  Standard GBT column names are NAME, RA, DEC,
+        GLON, and GLAT (case-insensitive).
+        """
         sources = []
         coord_system = CoordSystem.J2000  # default
         in_data = False
@@ -441,34 +595,68 @@ class SourcePage(QWizardPage):
                             coord_system = CoordSystem.J2000
 
                     if key == "head":
-                        col_names = value.split()
+                        col_names = [c.upper() for c in value.split()]
                         in_data = True
                     continue
 
                 if in_data:
                     parts = line.split()
-                    if len(parts) >= 3:
-                        sources.append(
-                            Source(
-                                name=parts[0],
-                                coord_system=coord_system,
-                                coord1=parts[1],
-                                coord2=parts[2],
-                                scan_length=None,
-                            )
+                    if len(parts) < len(col_names):
+                        continue
+
+                    name_idx = self._find_col(col_names, ("NAME",))
+                    glon_idx = self._find_col(col_names, ("GLON",))
+                    glat_idx = self._find_col(col_names, ("GLAT",))
+                    ra_idx = self._find_col(col_names, ("RA",))
+                    dec_idx = self._find_col(col_names, ("DEC",))
+
+                    if glon_idx is not None and glat_idx is not None:
+                        c1_idx, c2_idx = glon_idx, glat_idx
+                        coord_system = CoordSystem.GALACTIC
+                    elif ra_idx is not None and dec_idx is not None:
+                        c1_idx, c2_idx = ra_idx, dec_idx
+                    else:
+                        raise ValueError(
+                            "Catalog HEAD line must contain coordinate "
+                            "columns (RA/DEC or GLON/GLAT)."
                         )
 
+                    if name_idx is None:
+                        raise ValueError(
+                            "Catalog HEAD line must contain a NAME column."
+                        )
+
+                    sources.append(
+                        Source(
+                            name=parts[name_idx],
+                            coord_system=coord_system,
+                            coord1=parts[c1_idx],
+                            coord2=parts[c2_idx],
+                            scan_length=None,
+                        )
+                    )
+
         return sources
+
+    @staticmethod
+    def _find_col(col_names, candidates):
+        """Return the index of the first matching column name, or None."""
+        for name in candidates:
+            try:
+                return col_names.index(name)
+            except ValueError:
+                continue
+        return None
 
     def _sources_from_table(self):
         """Read all sources from the table widget."""
         sources = []
         for row in range(self.table.rowCount()):
-            name = self.table.item(row, 0).text()
-            cs_text = self.table.item(row, 1).text()
-            coord1 = self.table.item(row, 2).text()
-            coord2 = self.table.item(row, 3).text()
-            scan_text = self.table.item(row, 4).text()
+            name = self.table.item(row, self.COL_NAME).text()
+            cs_text = self.table.item(row, self.COL_COORDSYS).text()
+            coord1 = self.table.item(row, self.COL_COORD1).text()
+            coord2 = self.table.item(row, self.COL_COORD2).text()
+            scan_text = self.table.item(row, self.COL_SCAN).text()
 
             cs = CoordSystem.J2000
             for member in CoordSystem:
@@ -499,8 +687,8 @@ class SourcePage(QWizardPage):
         # Check all sources have scan lengths
         missing = []
         for row in range(self.table.rowCount()):
-            scan_text = self.table.item(row, 4).text().strip()
-            name = self.table.item(row, 0).text()
+            scan_text = self.table.item(row, self.COL_SCAN).text().strip()
+            name = self.table.item(row, self.COL_NAME).text()
             if not scan_text:
                 missing.append(name)
             else:
