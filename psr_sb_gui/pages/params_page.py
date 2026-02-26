@@ -82,9 +82,11 @@ class ParamsPage(QWizardPage):
     def initializePage(self):
         """Initialize per-source VegasParams and populate the source list."""
         for src in self.observation.sources:
-            if src.vegas_params is None:
-                band_label = self._get_source_band(src)
-                obs_mode = self._get_source_mode(src)
+            band_label = self._get_source_band(src)
+            obs_mode = self._get_source_mode(src)
+            if (src.vegas_params is None
+                    or src.vegas_params._band_label != band_label
+                    or src.vegas_params._obs_mode_value != obs_mode.value):
                 src.vegas_params = get_default_vegas_params(band_label, obs_mode)
 
         # Populate source list

@@ -239,6 +239,8 @@ def get_default_vegas_params(band_label: str, obs_mode: ObsMode) -> "VegasParams
         fold_bins=fold_bins,
         fold_dumptime=fold_dumptime,
         center_freqs=center_freqs,
+        _band_label=band_label,
+        _obs_mode_value=obs_mode.value,
     )
 
 
@@ -271,6 +273,9 @@ class VegasParams:
     fold_bins: int = 2048
     fold_dumptime: float = 10.0
     center_freqs: list[float] = field(default_factory=list)  # per-window center freqs (MHz)
+    # Track what band/mode these defaults were generated for
+    _band_label: str = ""
+    _obs_mode_value: str = ""
 
 
 @dataclass
@@ -283,5 +288,5 @@ class ObservationModel:
     include_flux_cal: bool = False
     flux_cal_source: str = ""
     flux_cal_scan_duration: float = 95.0
-    generated_sb: str = ""
+    generated_sbs: dict[str, str] = field(default_factory=dict)
     output_path: str = ""
