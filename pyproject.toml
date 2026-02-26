@@ -9,6 +9,7 @@ description = "Wizard-style GUI for GBT pulsar scheduling blocks"
 requires-python = ">=3.10"
 dependencies = [
     "PySide6>=6.5",
+    "astropy>=5.0",
 ]
 
 [project.scripts]

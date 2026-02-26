@@ -85,6 +85,8 @@ class ObservationModel:
     per_source_config: bool = False
     include_pol_cal: bool = False
     include_flux_cal: bool = False
+    flux_cal_source: str = ""
+    flux_cal_scan_duration: float = 95.0
     vegas_params: VegasParams = field(default_factory=VegasParams)
     generated_sb: str = ""
     output_path: str = ""
