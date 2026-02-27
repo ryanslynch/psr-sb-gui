@@ -274,6 +274,9 @@ class FluxCalPage(QWizardPage):
 
         # --- Enable toggle ---
         self.enable_check = QCheckBox("Include flux calibration observation")
+        self.enable_check.setToolTip(
+            "Include a flux calibration observation using a known calibrator source"
+        )
         self.enable_check.toggled.connect(self._toggle_settings)
         layout.addWidget(self.enable_check)
 
@@ -285,6 +288,7 @@ class FluxCalPage(QWizardPage):
         cal_row = QHBoxLayout()
         cal_row.addWidget(QLabel("Calibrator Source:"))
         self.cal_combo = QComboBox()
+        self.cal_combo.setToolTip("Select a standard flux calibrator source near your targets")
         for cal in CALIBRATORS:
             self.cal_combo.addItem(cal.name)
         self.cal_combo.currentTextChanged.connect(self._update_info)
@@ -301,6 +305,7 @@ class FluxCalPage(QWizardPage):
         dur_row = QHBoxLayout()
         dur_row.addWidget(QLabel("Scan duration (seconds):"))
         self.duration_edit = QLineEdit("95.0")
+        self.duration_edit.setToolTip("Duration of each flux calibration scan in seconds")
         self.duration_edit.setFixedWidth(80)
         dur_row.addWidget(self.duration_edit)
         dur_row.addStretch()

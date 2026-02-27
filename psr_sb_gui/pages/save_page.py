@@ -42,6 +42,7 @@ class SavePage(QWizardPage):
 
         # Table: SB Label | Save button | Status
         self._table = QTableWidget()
+        self._table.setToolTip("Scheduling blocks and their save status")
         self._table.setColumnCount(3)
         self._table.setHorizontalHeaderLabels(["Scheduling Block", "File", "Status"])
         self._table.horizontalHeader().setSectionResizeMode(
@@ -62,6 +63,7 @@ class SavePage(QWizardPage):
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
         self._save_all_btn = QPushButton("Save All")
+        self._save_all_btn.setToolTip("Save all unsaved scheduling blocks to files")
         self._save_all_btn.clicked.connect(self._save_all)
         btn_layout.addWidget(self._save_all_btn)
         layout.addLayout(btn_layout)
@@ -81,6 +83,7 @@ class SavePage(QWizardPage):
 
             # Column 1: Save button
             btn = QPushButton("Save...")
+            btn.setToolTip("Save this scheduling block to a file")
             btn.clicked.connect(lambda checked, lbl=label: self._save_one(lbl))
             self._table.setCellWidget(row, 1, btn)
 

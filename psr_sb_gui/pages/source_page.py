@@ -94,10 +94,12 @@ class SourcePage(QWizardPage):
         self.name_edit = QLineEdit()
         self.name_edit.setMaxLength(32)
         self.name_edit.setPlaceholderText("Source name (e.g. J1713+0747)")
+        self.name_edit.setToolTip("Name of the pulsar or astronomical source")
         row1.addWidget(self.name_edit)
 
         row1.addWidget(QLabel("Coord System:"))
         self.coord_system_combo = QComboBox()
+        self.coord_system_combo.setToolTip("Coordinate system for source position")
         self._coord_system_dirty = False
         for cs in CoordSystem:
             self.coord_system_combo.addItem(cs.value, cs)
@@ -118,6 +120,7 @@ class SourcePage(QWizardPage):
         row2.addWidget(QLabel("Scan Length (s):"))
         self.scan_length_edit = QLineEdit()
         self.scan_length_edit.setPlaceholderText("seconds")
+        self.scan_length_edit.setToolTip("On-source integration time in seconds")
         row2.addWidget(self.scan_length_edit)
         form_layout.addLayout(row2)
 
@@ -129,14 +132,17 @@ class SourcePage(QWizardPage):
         # --- Action buttons ---
         button_row1 = QHBoxLayout()
         self.add_btn = QPushButton("Add Source")
+        self.add_btn.setToolTip("Add a new source or update the selected source")
         self.add_btn.clicked.connect(self._add_or_update_source)
         button_row1.addWidget(self.add_btn)
 
         self.import_btn = QPushButton("Import from Catalog...")
+        self.import_btn.setToolTip("Import sources from a GBT/Astrid catalog file")
         self.import_btn.clicked.connect(self._import_catalog)
         button_row1.addWidget(self.import_btn)
 
         self.clear_form_btn = QPushButton("Clear Form")
+        self.clear_form_btn.setToolTip("Clear all form fields")
         self.clear_form_btn.clicked.connect(self._clear_form)
         button_row1.addWidget(self.clear_form_btn)
 
@@ -144,10 +150,12 @@ class SourcePage(QWizardPage):
 
         button_row2 = QHBoxLayout()
         self.apply_checked_btn = QPushButton("Apply to Selected")
+        self.apply_checked_btn.setToolTip("Apply current form values to all selected sources")
         self.apply_checked_btn.clicked.connect(self._apply_to_checked)
         button_row2.addWidget(self.apply_checked_btn)
 
         self.remove_checked_btn = QPushButton("Remove Selected")
+        self.remove_checked_btn.setToolTip("Remove all selected sources from the table")
         self.remove_checked_btn.clicked.connect(self._remove_checked)
         button_row2.addWidget(self.remove_checked_btn)
 
@@ -162,9 +170,13 @@ class SourcePage(QWizardPage):
         if cs == CoordSystem.GALACTIC:
             self.coord1_edit.setPlaceholderText("l (degrees)")
             self.coord2_edit.setPlaceholderText("b (degrees)")
+            self.coord1_edit.setToolTip("Galactic longitude (degrees)")
+            self.coord2_edit.setToolTip("Galactic latitude (degrees)")
         else:
             self.coord1_edit.setPlaceholderText("HH:MM:SS.SS")
             self.coord2_edit.setPlaceholderText("\u00b1DD:MM:SS.SS")
+            self.coord1_edit.setToolTip("Right Ascension (HH:MM:SS.S)")
+            self.coord2_edit.setToolTip("Declination (DD:MM:SS.S)")
 
     def _clear_form(self):
         self.name_edit.clear()

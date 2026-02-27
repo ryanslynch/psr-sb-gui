@@ -213,6 +213,7 @@ class PreviewPage(QWizardPage):
 
         # Left panel: SB list
         self._sb_list = QListWidget()
+        self._sb_list.setToolTip("Select a scheduling block to view or edit")
         self._splitter.addWidget(self._sb_list)
 
         # Right panel: editor + restore button
@@ -227,12 +228,14 @@ class PreviewPage(QWizardPage):
         btn_row = QHBoxLayout()
         btn_row.addStretch()
         self._restore_btn = QPushButton("Restore Defaults")
+        self._restore_btn.setToolTip("Discard manual edits and restore the auto-generated scheduling block")
         self._restore_btn.clicked.connect(self._restore_current)
         btn_row.addWidget(self._restore_btn)
         right_layout.addLayout(btn_row)
 
         # Monospace text editor with syntax highlighting
         self._editor = QPlainTextEdit()
+        self._editor.setToolTip("Astrid scheduling block Python script — edit directly if needed")
         self._editor.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )

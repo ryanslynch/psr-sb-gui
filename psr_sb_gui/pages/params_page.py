@@ -45,6 +45,7 @@ class ParamsPage(QWizardPage):
 
         # Left panel: source list
         self._source_list = QListWidget()
+        self._source_list.setToolTip("Select a source to view and edit its VEGAS backend parameters")
         self._splitter.addWidget(self._source_list)
 
         # Right panel: detail area
@@ -217,6 +218,7 @@ class ParamsPage(QWizardPage):
             spin.setDecimals(1)
             spin.setSuffix(" MHz")
             spin.setValue(cf)
+            spin.setToolTip("Center frequency for this spectral window in MHz")
             self._center_freq_spins.append(spin)
             if n_windows > 1:
                 label = f"Window {i + 1} Center Freq:"
@@ -226,6 +228,9 @@ class ParamsPage(QWizardPage):
 
         # Num Channels
         self._numchan_combo = QComboBox()
+        self._numchan_combo.setToolTip(
+            "Number of spectral channels per window (more channels = finer frequency resolution)"
+        )
         valid_nc = get_valid_numchan_values(bw, obs_mode.is_coherent)
         for nc in valid_nc:
             self._numchan_combo.addItem(str(nc), nc)
@@ -236,6 +241,9 @@ class ParamsPage(QWizardPage):
 
         # Integration Time
         self._tint_combo = QComboBox()
+        self._tint_combo.setToolTip(
+            "Integration time per sample (shorter = better time resolution but higher data rate)"
+        )
         self._populate_tint_combo(p.numchan, p.tint)
         form.addRow("Integration Time:", self._tint_combo)
 
@@ -246,6 +254,7 @@ class ParamsPage(QWizardPage):
 
         # Polarization — only incoherent search allows Total Intensity
         self._poln_combo = QComboBox()
+        self._poln_combo.setToolTip("Polarization recording mode")
         if obs_mode == ObsMode.SEARCH:
             self._poln_combo.addItems(list(POLN_DISPLAY.values()))
             display_poln = POLN_DISPLAY.get(p.polnmode, "Full Stokes")
@@ -270,6 +279,7 @@ class ParamsPage(QWizardPage):
             self._fold_bins_spin.setRange(1, 65536)
             self._fold_bins_spin.setDecimals(0)
             self._fold_bins_spin.setValue(p.fold_bins)
+            self._fold_bins_spin.setToolTip("Number of pulse phase bins for folded profiles")
             form.addRow("Fold Bins:", self._fold_bins_spin)
 
             self._fold_dumptime_spin = QDoubleSpinBox()
@@ -277,6 +287,9 @@ class ParamsPage(QWizardPage):
             self._fold_dumptime_spin.setDecimals(1)
             self._fold_dumptime_spin.setSuffix(" s")
             self._fold_dumptime_spin.setValue(p.fold_dumptime)
+            self._fold_dumptime_spin.setToolTip(
+                "Time interval between folded profile outputs in seconds"
+            )
             form.addRow("Fold Dump Time:", self._fold_dumptime_spin)
 
         self._detail_group.setLayout(form)

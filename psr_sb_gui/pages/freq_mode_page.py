@@ -102,6 +102,7 @@ class FreqModePage(QWizardPage):
         band_row = QHBoxLayout()
         band_row.addWidget(QLabel("Frequency Band:"))
         self.band_combo = QComboBox()
+        self.band_combo.setToolTip("Radio frequency band and receiver")
         for name in FREQ_BAND_NAMES:
             self.band_combo.addItem(name)
         self.band_combo.currentTextChanged.connect(self._update_band_info)
@@ -118,10 +119,17 @@ class FreqModePage(QWizardPage):
         mode_row = QHBoxLayout()
         mode_row.addWidget(QLabel("Obs. Mode:"))
         self.mode_combo = QComboBox()
+        self.mode_combo.setToolTip(
+            "Pulsar observing mode (Fold for timing, Search for surveys, "
+            "new pulsars, and single-pulse studies)"
+        )
         for label in MODE_LABELS:
             self.mode_combo.addItem(label)
         mode_row.addWidget(self.mode_combo)
         self.coherent_check = QCheckBox("Coherent Dedispersion")
+        self.coherent_check.setToolTip(
+            "Apply coherent dedispersion to remove interstellar dispersion in real time"
+        )
         self.coherent_check.setChecked(True)
         mode_row.addWidget(self.coherent_check)
         mode_row.addStretch()
@@ -129,6 +137,7 @@ class FreqModePage(QWizardPage):
 
         # Pol cal checkbox
         self.pol_cal_check = QCheckBox("Include polarization calibration scan")
+        self.pol_cal_check.setToolTip("Include a noise diode scan for polarization calibration")
         global_layout.addWidget(self.pol_cal_check)
 
         global_group.setLayout(global_layout)
@@ -136,6 +145,7 @@ class FreqModePage(QWizardPage):
 
         # --- Per-source config ---
         self.per_source_check = QCheckBox("Configure frequency/mode per source")
+        self.per_source_check.setToolTip("Override global settings with per-source frequency band and mode")
         self.per_source_check.toggled.connect(self._toggle_per_source)
         layout.addWidget(self.per_source_check)
 
@@ -148,6 +158,17 @@ class FreqModePage(QWizardPage):
             ["Source", "Freq Band", "Obs. Mode", "Coherent DD",
              "Pol Cal", "Ephemeris", "DM"]
         )
+        header_tooltips = [
+            "Source name",
+            "Radio frequency band for this source",
+            "Observing mode for this source",
+            "Enable coherent dedispersion for this source",
+            "Include polarization calibration for this source",
+            "Pulsar ephemeris file (required for fold modes)",
+            "Dispersion measure in pc/cm\u00b3 (required for coherent search)",
+        ]
+        for col, tip in enumerate(header_tooltips):
+            self.table.horizontalHeaderItem(col).setToolTip(tip)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.DoubleClicked)
