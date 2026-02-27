@@ -1,5 +1,7 @@
 # psr-sb-gui
 
+**THIS TOOL IS IN DEVELOPMENT AND SHOULD NOT YET BE USED BY OBSERVERS TO CREATE ASTRID SCHEDULING BLOCKS**
+
 A wizard-style GUI for generating [Green Bank Telescope](https://greenbankobservatory.org/science/gbt/) (GBT) pulsar scheduling blocks. It guides observers through the process of specifying sources, frequency bands, observing modes, and calibration settings, then produces ready-to-use [Astrid](https://gbtdocs.readthedocs.io/en/latest/references/astrid.html) scheduling blocks.
 
 ## Features
