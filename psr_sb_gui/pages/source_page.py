@@ -1,8 +1,10 @@
 import re
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
@@ -97,6 +99,11 @@ class SourcePage(QWizardPage):
         self.name_edit.setToolTip("Name of the pulsar or astronomical source")
         row1.addWidget(self.name_edit)
 
+        self.lookup_btn = QPushButton("Lookup Coordinates")
+        self.lookup_btn.setToolTip("Look up coordinates from the ATNF pulsar catalog")
+        self.lookup_btn.clicked.connect(self._lookup_atnf)
+        row1.addWidget(self.lookup_btn)
+
         row1.addWidget(QLabel("Coord System:"))
         self.coord_system_combo = QComboBox()
         self.coord_system_combo.setToolTip("Coordinate system for source position")
@@ -187,6 +194,83 @@ class SourcePage(QWizardPage):
         self.scan_length_edit.clear()
         self.table.clearSelection()
         self.table.setCurrentCell(-1, -1)
+
+    def _lookup_atnf(self):
+        """Look up source coordinates from the ATNF pulsar catalog."""
+        name = self.name_edit.text().strip()
+        if not name:
+            QMessageBox.warning(self, "Lookup", "Enter a source name first.")
+            return
+
+        cs = self.coord_system_combo.currentData()
+        if cs == CoordSystem.B1950:
+            QMessageBox.warning(
+                self, "Lookup",
+                "ATNF catalog lookup is not available for B1950 coordinates.\n"
+                "Please select J2000 or Galactic."
+            )
+            return
+
+        try:
+            import psrqpy
+        except ImportError:
+            QMessageBox.warning(
+                self, "Lookup",
+                "The psrqpy package is required for ATNF lookups.\n"
+                "Install it with: pip install psrqpy"
+            )
+            return
+
+        # Build list of name variants to try
+        variants = [name]
+        if name.upper().startswith("PSR "):
+            variants.append(name[4:])
+        else:
+            variants.append("PSR " + name)
+        if name[0].isdigit():
+            variants.append("J" + name)
+            variants.append("B" + name)
+
+        QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+        try:
+            result = None
+            for variant in variants:
+                try:
+                    q = psrqpy.QueryATNF(
+                        params=["JNAME", "BNAME", "RAJ", "DECJ", "GL", "GB"],
+                        psrs=[variant],
+                    )
+                    if q.num_pulsars and q.num_pulsars > 0:
+                        result = q
+                        break
+                except Exception:
+                    continue
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        if result is None or result.num_pulsars == 0:
+            QMessageBox.warning(
+                self, "Lookup",
+                f"Source '{name}' not found in the ATNF pulsar catalog."
+            )
+            return
+
+        if cs == CoordSystem.GALACTIC:
+            gl = result["GL"][0]
+            gb = result["GB"][0]
+            if gl is not None and gb is not None:
+                self.coord1_edit.setText(str(float(gl)))
+                self.coord2_edit.setText(str(float(gb)))
+            else:
+                QMessageBox.warning(self, "Lookup", "Galactic coordinates not available for this source.")
+        else:
+            raj = result["RAJ"][0]
+            decj = result["DECJ"][0]
+            if raj is not None and decj is not None:
+                self.coord1_edit.setText(str(raj))
+                self.coord2_edit.setText(str(decj))
+            else:
+                QMessageBox.warning(self, "Lookup", "J2000 coordinates not available for this source.")
 
     def _on_row_selected(self, row):
         if row < 0:

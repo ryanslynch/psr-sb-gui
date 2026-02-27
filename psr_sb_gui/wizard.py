@@ -30,3 +30,5 @@ class PulsarObsWizard(QWizard):
         self.setPage(PAGE_PARAMS, ParamsPage(self.observation, self))
         self.setPage(PAGE_PREVIEW, PreviewPage(self.observation, self))
         self.setPage(PAGE_SAVE, SavePage(self.observation, self))
+
+        self.resize(750, 600)

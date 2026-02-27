@@ -1,6 +1,8 @@
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -187,6 +189,19 @@ class FreqModePage(QWizardPage):
         self.table.cellChanged.connect(self._on_cell_changed)
 
         ps_layout.addWidget(self.table)
+
+        # Lookup DM button
+        dm_btn_row = QHBoxLayout()
+        self.lookup_dm_btn = QPushButton("Lookup DM from ATNF")
+        self.lookup_dm_btn.setToolTip(
+            "Query the ATNF pulsar catalog to fill in DM values for "
+            "sources in coherent search mode"
+        )
+        self.lookup_dm_btn.clicked.connect(self._lookup_dm_atnf)
+        dm_btn_row.addWidget(self.lookup_dm_btn)
+        dm_btn_row.addStretch()
+        ps_layout.addLayout(dm_btn_row)
+
         self.per_source_group.setLayout(ps_layout)
         self.per_source_group.setVisible(False)
         layout.addWidget(self.per_source_group)
@@ -416,6 +431,86 @@ class FreqModePage(QWizardPage):
                     dm_item.setFlags(dm_item.flags() & ~Qt.ItemIsEditable)
                     dm_item.setForeground(Qt.gray)
         self.table.blockSignals(False)
+
+    def _lookup_dm_atnf(self):
+        """Query ATNF catalog to fill DM values for coherent search sources."""
+        try:
+            import psrqpy
+        except ImportError:
+            QMessageBox.warning(
+                self, "Lookup",
+                "The psrqpy package is required for ATNF lookups.\n"
+                "Install it with: pip install psrqpy"
+            )
+            return
+
+        # Find rows that need DM (coherent search with empty/missing DM)
+        targets = []
+        for row in range(self.table.rowCount()):
+            mode_item = self.table.item(row, COL_MODE)
+            mode_text = mode_item.text() if mode_item else "Fold"
+            coherent = self._get_coherent_checked(row)
+            if mode_text == "Search" and coherent:
+                dm_item = self.table.item(row, COL_DM)
+                dm_text = dm_item.text().strip() if dm_item else ""
+                if not dm_text or dm_text == "N/A":
+                    name = self.table.item(row, COL_NAME).text()
+                    targets.append((row, name))
+
+        if not targets:
+            QMessageBox.information(
+                self, "Lookup DM",
+                "No sources in coherent search mode need a DM value."
+            )
+            return
+
+        QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+        found = []
+        not_found = []
+        try:
+            for row, name in targets:
+                dm = self._query_atnf_dm(psrqpy, name)
+                if dm is not None:
+                    self.table.item(row, COL_DM).setText(str(dm))
+                    found.append(name)
+                else:
+                    not_found.append(name)
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        if not_found:
+            QMessageBox.warning(
+                self, "Lookup DM",
+                f"DM found for: {', '.join(found)}\n\n"
+                f"Not found in ATNF catalog: {', '.join(not_found)}\n\n"
+                "Please enter DM values manually for these sources."
+                if found else
+                f"No sources found in the ATNF catalog:\n{', '.join(not_found)}\n\n"
+                "Please enter DM values manually."
+            )
+
+    @staticmethod
+    def _query_atnf_dm(psrqpy, name):
+        """Query ATNF for DM of a single pulsar. Returns float or None."""
+        variants = [name]
+        if name.upper().startswith("PSR "):
+            variants.append(name[4:])
+        else:
+            variants.append("PSR " + name)
+        if name[0].isdigit():
+            variants.append("J" + name)
+            variants.append("B" + name)
+
+        for variant in variants:
+            try:
+                q = psrqpy.QueryATNF(params=["DM"], psrs=[variant])
+                if q.num_pulsars and q.num_pulsars > 0:
+                    dm_val = q["DM"][0]
+                    if dm_val is not None and float(dm_val) > 0:
+                        return round(float(dm_val), 4)
+            except Exception:
+                continue
+        return None
 
     def _set_na_widget(self, row, col):
         """Set a read-only 'N/A' label in a cell widget column."""

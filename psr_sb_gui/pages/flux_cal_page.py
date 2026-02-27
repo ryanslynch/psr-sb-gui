@@ -1,4 +1,5 @@
 import math
+import numpy as np
 from dataclasses import dataclass, field
 
 from PySide6.QtCore import Qt
@@ -13,6 +14,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWizardPage,
 )
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+from matplotlib.figure import Figure
 
 from psr_sb_gui.models.observation import FREQ_BANDS, ObservationModel
 
@@ -301,6 +304,25 @@ class FluxCalPage(QWizardPage):
         self.info_label.setStyleSheet("color: gray; margin-left: 10px;")
         settings_layout.addWidget(self.info_label)
 
+        # Sky plot (Aitoff projection)
+        self.figure = Figure(figsize=(6, 3))
+        self.canvas = FigureCanvasQTAgg(self.figure)
+        self.canvas.setMinimumHeight(200)
+        settings_layout.addWidget(self.canvas)
+
+        # Label toggle checkboxes
+        label_row = QHBoxLayout()
+        self.show_source_labels = QCheckBox("Show source labels")
+        self.show_source_labels.setToolTip("Display names next to source markers on the sky plot")
+        self.show_source_labels.toggled.connect(self._update_plot)
+        label_row.addWidget(self.show_source_labels)
+        self.show_cal_labels = QCheckBox("Show calibrator labels")
+        self.show_cal_labels.setToolTip("Display names next to calibrator markers on the sky plot")
+        self.show_cal_labels.toggled.connect(self._update_plot)
+        label_row.addWidget(self.show_cal_labels)
+        label_row.addStretch()
+        settings_layout.addLayout(label_row)
+
         # Scan duration
         dur_row = QHBoxLayout()
         dur_row.addWidget(QLabel("Scan duration (seconds):"))
@@ -332,6 +354,96 @@ class FluxCalPage(QWizardPage):
     def _toggle_settings(self, checked):
         self.settings_group.setEnabled(checked)
 
+    def _get_source_equatorial_positions(self):
+        """Return list of (name, ra_hours, dec_deg) for all science sources."""
+        from psr_sb_gui.models.observation import CoordSystem
+        positions = []
+        for src in self.observation.sources:
+            if src.coord_system == CoordSystem.GALACTIC:
+                try:
+                    l_deg = float(src.coord1)
+                    b_deg = float(src.coord2)
+                except ValueError:
+                    continue
+                from astropy.coordinates import SkyCoord
+                import astropy.units as u
+                sc = SkyCoord(l=l_deg * u.deg, b=b_deg * u.deg, frame="galactic")
+                icrs = sc.icrs
+                positions.append((src.name, icrs.ra.hour, icrs.dec.deg))
+            else:
+                ra_h = _parse_sexagesimal(src.coord1)
+                dec_d = _parse_sexagesimal(src.coord2)
+                if ra_h is not None and dec_d is not None:
+                    positions.append((src.name, ra_h, dec_d))
+        return positions
+
+    def _update_plot(self):
+        """Redraw the Aitoff sky plot."""
+        self.figure.clear()
+        ax = self.figure.add_subplot(111, projection="aitoff")
+        ax.grid(True, alpha=0.3)
+
+        selected_cal_name = self.cal_combo.currentText()
+
+        # Plot other calibrators (gray triangles)
+        other_ra = []
+        other_dec = []
+        other_names = []
+        sel_ra = sel_dec = None
+        for cal in CALIBRATORS:
+            ra_rad = (cal.ra_hours * 15.0 - 180.0) * np.pi / 180.0
+            dec_rad = cal.dec_deg * np.pi / 180.0
+            if cal.name == selected_cal_name:
+                sel_ra = ra_rad
+                sel_dec = dec_rad
+            else:
+                other_ra.append(ra_rad)
+                other_dec.append(dec_rad)
+                other_names.append(cal.name)
+
+        if other_ra:
+            ax.scatter(other_ra, other_dec, marker="^", c="gray", s=30,
+                       alpha=0.6, label="Calibrators", zorder=2)
+        if self.show_cal_labels.isChecked():
+            for name, ra, dec in zip(other_names, other_ra, other_dec):
+                ax.annotate(name, (ra, dec), fontsize=6, alpha=0.6,
+                            xytext=(3, 3), textcoords="offset points")
+
+        # Plot selected calibrator (red star)
+        if sel_ra is not None:
+            ax.scatter([sel_ra], [sel_dec], marker="*", c="red", s=150,
+                       edgecolors="darkred", linewidths=0.5,
+                       label=f"Selected: {selected_cal_name}", zorder=4)
+            if self.show_cal_labels.isChecked():
+                ax.annotate(selected_cal_name, (sel_ra, sel_dec), fontsize=7,
+                            color="red", fontweight="bold",
+                            xytext=(5, 5), textcoords="offset points")
+
+        # Plot science sources (blue circles)
+        source_positions = self._get_source_equatorial_positions()
+        if source_positions:
+            src_ra = [(ra_h * 15.0 - 180.0) * np.pi / 180.0 for _, ra_h, _ in source_positions]
+            src_dec = [dec_d * np.pi / 180.0 for _, _, dec_d in source_positions]
+            src_names = [name for name, _, _ in source_positions]
+            ax.scatter(src_ra, src_dec, marker="o", c="royalblue", s=40,
+                       edgecolors="navy", linewidths=0.5,
+                       label="Sources", zorder=3)
+            if self.show_source_labels.isChecked():
+                for name, ra, dec in zip(src_names, src_ra, src_dec):
+                    ax.annotate(name, (ra, dec), fontsize=7, color="navy",
+                                xytext=(5, 5), textcoords="offset points")
+
+        ax.set_xlabel("RA", fontsize=8)
+        ax.set_ylabel("Dec", fontsize=8)
+        # Label RA ticks in hours (Aitoff x-axis runs -180° to +180°, centered on 0°)
+        ra_tick_degs = np.array([-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150])
+        ra_tick_hours = ((ra_tick_degs + 180) / 15).astype(int)  # map to 0h–24h
+        ax.set_xticklabels([f"{h}h" for h in ra_tick_hours], fontsize=7)
+        ax.tick_params(axis="y", labelsize=7)
+        ax.legend(loc="lower right", fontsize=7, framealpha=0.8)
+        self.figure.tight_layout()
+        self.canvas.draw()
+
     def _update_info(self):
         """Update the info label for the currently selected calibrator."""
         cal_name = self.cal_combo.currentText()
@@ -347,6 +459,7 @@ class FluxCalPage(QWizardPage):
             f"RA: {ra_str}  |  Dec: {dec_str}  |  "
             f"S_obs: {flux:.2f} Jy at {freq:.0f} MHz"
         )
+        self._update_plot()
 
     def _compute_mean_position(self) -> tuple[float, float]:
         """Compute mean RA (hours) and Dec (degrees) of all science sources.
