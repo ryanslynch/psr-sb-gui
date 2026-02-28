@@ -18,6 +18,16 @@ A wizard-style GUI for generating [Green Bank Telescope](https://greenbankobserv
 - Python 3.10+
 - A working display (X11, Wayland, or macOS) for the Qt GUI
 
+### Optional: tempo (for ephemeris validation)
+
+The "Validate Ephemeris Files" feature on the Frequency & Observing Mode page requires [tempo](https://tempo.sourceforge.net/), which can be installed via conda:
+
+```bash
+conda install -c demorest tempo
+```
+
+This is optional -- the GUI works without tempo, but you won't be able to validate parfiles before generating scheduling blocks.
+
 ## Installation
 
 ```bash

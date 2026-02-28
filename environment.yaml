@@ -1,0 +1,11 @@
+name: psr-sb-gui
+channels:
+  - demorest
+  - conda-forge
+dependencies:
+  - python>=3.10
+  - pyside6>=6.5
+  - astropy>=5.0
+  - psrqpy>=1.0
+  - matplotlib>=3.5
+  - tempo

@@ -1,3 +1,8 @@
+import os
+import shutil
+import subprocess
+import tempfile
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
@@ -190,17 +195,26 @@ class FreqModePage(QWizardPage):
 
         ps_layout.addWidget(self.table)
 
-        # Lookup DM button
-        dm_btn_row = QHBoxLayout()
+        # Action buttons row
+        action_btn_row = QHBoxLayout()
         self.lookup_dm_btn = QPushButton("Lookup DM from ATNF")
         self.lookup_dm_btn.setToolTip(
             "Query the ATNF pulsar catalog to fill in DM values for "
             "sources in coherent search mode"
         )
         self.lookup_dm_btn.clicked.connect(self._lookup_dm_atnf)
-        dm_btn_row.addWidget(self.lookup_dm_btn)
-        dm_btn_row.addStretch()
-        ps_layout.addLayout(dm_btn_row)
+        action_btn_row.addWidget(self.lookup_dm_btn)
+
+        self.validate_ephem_btn = QPushButton("Validate Ephemeris Files")
+        self.validate_ephem_btn.setToolTip(
+            "Run tempo to verify that each ephemeris file can generate "
+            "valid polycos for observing"
+        )
+        self.validate_ephem_btn.clicked.connect(self._validate_ephemeris_files)
+        action_btn_row.addWidget(self.validate_ephem_btn)
+
+        action_btn_row.addStretch()
+        ps_layout.addLayout(action_btn_row)
 
         self.per_source_group.setLayout(ps_layout)
         self.per_source_group.setVisible(False)
@@ -511,6 +525,95 @@ class FreqModePage(QWizardPage):
             except Exception:
                 continue
         return None
+
+    def _validate_ephemeris_files(self):
+        """Validate ephemeris files by running tempo to generate polycos."""
+        # Check that tempo is available
+        if not shutil.which("tempo"):
+            QMessageBox.warning(
+                self, "Validate Ephemeris",
+                "The tempo program was not found on your PATH.\n\n"
+                "tempo is required for ephemeris validation. It can be "
+                "installed from the 'demorest' conda channel:\n"
+                "  conda install -c demorest tempo"
+            )
+            return
+
+        # Collect fold-mode rows that have an ephemeris file
+        targets = []
+        for row in range(self.table.rowCount()):
+            mode_item = self.table.item(row, COL_MODE)
+            mode_text = mode_item.text() if mode_item else "Fold"
+            if mode_text == "Fold":
+                path = self._get_ephemeris_path(row)
+                name = self.table.item(row, COL_NAME).text()
+                if path:
+                    targets.append((row, name, path))
+
+        if not targets:
+            QMessageBox.information(
+                self, "Validate Ephemeris",
+                "No fold-mode sources with ephemeris files to validate."
+            )
+            return
+
+        QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+        passed = []
+        failed = []
+        try:
+            for row, name, parfile in targets:
+                ok, detail = self._run_tempo_validation(name, parfile)
+                if ok:
+                    passed.append(name)
+                else:
+                    failed.append((name, detail))
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        if failed:
+            fail_details = "\n\n".join(
+                f"{name}: {detail}" for name, detail in failed
+            )
+            msg = ""
+            if passed:
+                msg += f"Passed: {', '.join(passed)}\n\n"
+            msg += f"Failed:\n{fail_details}"
+            QMessageBox.warning(self, "Validate Ephemeris", msg)
+        else:
+            QMessageBox.information(
+                self, "Validate Ephemeris",
+                f"All {len(passed)} ephemeris file(s) passed validation."
+            )
+
+    @staticmethod
+    def _run_tempo_validation(pulsar_name, parfile_path):
+        """Run tempo to validate a parfile. Returns (success, detail_message)."""
+        tmpdir = tempfile.mkdtemp(prefix="psr_sb_gui_tempo_")
+        try:
+            cmd = [
+                "tempo", "-f", parfile_path,
+                "-z", f"-ZPSR={pulsar_name}", "-ZOBS=1",
+            ]
+            result = subprocess.run(
+                cmd, cwd=tmpdir,
+                capture_output=True, text=True, timeout=30,
+            )
+            polyco_path = os.path.join(tmpdir, "polyco.dat")
+            if os.path.isfile(polyco_path):
+                return True, ""
+            # polyco.dat was not generated — report stderr
+            stderr = result.stderr.strip()
+            if not stderr:
+                stderr = "(no error output from tempo)"
+            return False, stderr
+        except FileNotFoundError:
+            return False, "tempo executable not found"
+        except subprocess.TimeoutExpired:
+            return False, "tempo timed out after 30 seconds"
+        except Exception as e:
+            return False, str(e)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
     def _set_na_widget(self, row, col):
         """Set a read-only 'N/A' label in a cell widget column."""
