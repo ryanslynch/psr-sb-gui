@@ -599,13 +599,16 @@ class FreqModePage(QWizardPage):
                 capture_output=True, text=True, timeout=30,
             )
             polyco_path = os.path.join(tmpdir, "polyco.dat")
-            if os.path.isfile(polyco_path):
+            if os.path.isfile(polyco_path) and os.path.getsize(polyco_path) > 0:
                 return True, ""
-            # polyco.dat was not generated — report stderr
-            stderr = result.stderr.strip()
-            if not stderr:
-                stderr = "(no error output from tempo)"
-            return False, stderr
+            # polyco.dat was not generated or is empty — report output
+            parts = []
+            if result.stdout.strip():
+                parts.append(result.stdout.strip())
+            if result.stderr.strip():
+                parts.append(result.stderr.strip())
+            error_msg = "\n".join(parts) if parts else "(no error output from tempo)"
+            return False, error_msg
         except FileNotFoundError:
             return False, "tempo executable not found"
         except subprocess.TimeoutExpired:
