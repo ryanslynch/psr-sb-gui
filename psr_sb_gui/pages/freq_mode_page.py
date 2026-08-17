@@ -52,7 +52,12 @@ class FreqBandDelegate(QStyledItemDelegate):
         combo = QComboBox(parent)
         for name in FREQ_BAND_NAMES:
             combo.addItem(name)
+        combo.currentIndexChanged.connect(lambda *_: self._commit_and_close(combo))
         return combo
+
+    def _commit_and_close(self, editor):
+        self.commitData.emit(editor)
+        self.closeEditor.emit(editor)
 
     def setEditorData(self, editor, index):
         value = index.data(Qt.DisplayRole)
@@ -74,7 +79,12 @@ class ObsModeDelegate(QStyledItemDelegate):
         combo = QComboBox(parent)
         for label in MODE_LABELS:
             combo.addItem(label)
+        combo.currentIndexChanged.connect(lambda *_: self._commit_and_close(combo))
         return combo
+
+    def _commit_and_close(self, editor):
+        self.commitData.emit(editor)
+        self.closeEditor.emit(editor)
 
     def setEditorData(self, editor, index):
         value = index.data(Qt.DisplayRole)
@@ -147,22 +157,28 @@ class FreqModePage(QWizardPage):
         self.pol_cal_check.setToolTip("Include a noise diode scan for polarization calibration")
         global_layout.addWidget(self.pol_cal_check)
 
+        # Apply to all sources button
+        apply_row = QHBoxLayout()
+        self.apply_all_btn = QPushButton("Apply to All Sources")
+        self.apply_all_btn.setToolTip(
+            "Copy the global receiver, obs. mode, and pol cal settings "
+            "to every source in the table below"
+        )
+        self.apply_all_btn.clicked.connect(self._apply_global_to_all)
+        apply_row.addWidget(self.apply_all_btn)
+        apply_row.addStretch()
+        global_layout.addLayout(apply_row)
+
         global_group.setLayout(global_layout)
         layout.addWidget(global_group)
 
         # --- Per-source config ---
-        self.per_source_check = QCheckBox("Configure frequency/mode per source")
-        self.per_source_check.setToolTip("Override global settings with per-source frequency band and mode")
-        self.per_source_check.toggled.connect(self._toggle_per_source)
-        layout.addWidget(self.per_source_check)
-
-        # Per-source table (initially hidden)
         self.per_source_group = QGroupBox("Per-Source Configuration")
         ps_layout = QVBoxLayout()
 
         self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels(
-            ["Source", "Freq Band", "Obs. Mode", "Coherent DD",
+            ["Source", "Receiver", "Obs. Mode", "Coherent DD",
              "Pol Cal", "Ephemeris", "DM"]
         )
         header_tooltips = [
@@ -217,7 +233,6 @@ class FreqModePage(QWizardPage):
         ps_layout.addLayout(action_btn_row)
 
         self.per_source_group.setLayout(ps_layout)
-        self.per_source_group.setVisible(False)
         layout.addWidget(self.per_source_group)
 
         layout.addStretch()
@@ -251,11 +266,21 @@ class FreqModePage(QWizardPage):
         coherent = obs_mode in (ObsMode.COHERENT_FOLD, ObsMode.COHERENT_SEARCH)
         return mode_text, coherent
 
-    def _toggle_per_source(self, checked):
-        self.global_group.setEnabled(not checked)
-        self.per_source_group.setVisible(checked)
-        if checked:
-            self._populate_table()
+    def _apply_global_to_all(self):
+        """Copy the current global settings to every row of the per-source table."""
+        global_band = self.band_combo.currentText()
+        global_mode_text = self.mode_combo.currentText()
+        global_coherent = self.coherent_check.isChecked()
+        global_pol_cal = self.pol_cal_check.isChecked()
+
+        self.table.blockSignals(True)
+        for row in range(self.table.rowCount()):
+            self.table.item(row, COL_BAND).setText(global_band)
+            self.table.item(row, COL_MODE).setText(global_mode_text)
+            self._set_coherent_widget(row, global_coherent)
+            self._set_polcal_widget(row, global_pol_cal)
+        self.table.blockSignals(False)
+        self._update_column_visibility()
 
     def _populate_table(self):
         """Populate the per-source table from observation.sources with current global defaults."""
@@ -647,10 +672,7 @@ class FreqModePage(QWizardPage):
         # Pol cal
         self.pol_cal_check.setChecked(self.observation.include_pol_cal)
 
-        # Per-source config
-        self.per_source_check.setChecked(self.observation.per_source_config)
-        if self.observation.per_source_config:
-            self._populate_table()
+        self._populate_table()
 
     def validatePage(self):
         """Validate and save to model."""
@@ -662,70 +684,61 @@ class FreqModePage(QWizardPage):
             global_mode_text, global_coherent
         )
         self.observation.include_pol_cal = self.pol_cal_check.isChecked()
-        self.observation.per_source_config = self.per_source_check.isChecked()
+        self.observation.per_source_config = True
 
-        if self.per_source_check.isChecked():
-            # Validate and save per-source config
-            missing_ephem = []
-            missing_dm = []
+        # Validate and save per-source config
+        missing_ephem = []
+        missing_dm = []
 
-            for row in range(self.table.rowCount()):
-                src = self.observation.sources[row]
-                src.freq_range = self.table.item(row, COL_BAND).text()
+        for row in range(self.table.rowCount()):
+            src = self.observation.sources[row]
+            src.freq_range = self.table.item(row, COL_BAND).text()
 
-                mode_item = self.table.item(row, COL_MODE)
-                mode_text = mode_item.text() if mode_item else "Fold"
-                coherent = self._get_coherent_checked(row)
-                src.obs_mode = self._obs_mode_from_ui(mode_text, coherent)
-                src.include_pol_cal = self._get_polcal_checked(row)
+            mode_item = self.table.item(row, COL_MODE)
+            mode_text = mode_item.text() if mode_item else "Fold"
+            coherent = self._get_coherent_checked(row)
+            src.obs_mode = self._obs_mode_from_ui(mode_text, coherent)
+            src.include_pol_cal = self._get_polcal_checked(row)
 
-                # Ephemeris — only applicable for fold modes
-                if mode_text == "Fold":
-                    src.parfile = self._get_ephemeris_path(row)
-                    if not src.parfile:
-                        missing_ephem.append(src.name)
-                else:
-                    src.parfile = ""
-
-                # DM — only applicable for coherent search
-                if mode_text == "Search" and coherent:
-                    dm_text = self.table.item(row, COL_DM).text().strip()
-                    if not dm_text or dm_text == "N/A":
-                        missing_dm.append(src.name)
-                    else:
-                        try:
-                            dm_val = float(dm_text)
-                            if dm_val <= 0:
-                                missing_dm.append(src.name)
-                            else:
-                                src.dm = dm_val
-                        except ValueError:
-                            missing_dm.append(src.name)
-                else:
-                    src.dm = None
-
-            if missing_ephem:
-                QMessageBox.warning(
-                    self, "Validation Error",
-                    "An ephemeris file is required for sources in Fold mode.\n\n"
-                    f"Missing: {', '.join(missing_ephem)}"
-                )
-                return False
-
-            if missing_dm:
-                QMessageBox.warning(
-                    self, "Validation Error",
-                    "A DM value (> 0) is required for sources in Coherent Search mode.\n\n"
-                    f"Missing or invalid: {', '.join(missing_dm)}"
-                )
-                return False
-        else:
-            # Clear per-source overrides
-            for src in self.observation.sources:
-                src.freq_range = None
-                src.obs_mode = None
+            # Ephemeris — only applicable for fold modes
+            if mode_text == "Fold":
+                src.parfile = self._get_ephemeris_path(row)
+                if not src.parfile:
+                    missing_ephem.append(src.name)
+            else:
                 src.parfile = ""
+
+            # DM — only applicable for coherent search
+            if mode_text == "Search" and coherent:
+                dm_text = self.table.item(row, COL_DM).text().strip()
+                if not dm_text or dm_text == "N/A":
+                    missing_dm.append(src.name)
+                else:
+                    try:
+                        dm_val = float(dm_text)
+                        if dm_val <= 0:
+                            missing_dm.append(src.name)
+                        else:
+                            src.dm = dm_val
+                    except ValueError:
+                        missing_dm.append(src.name)
+            else:
                 src.dm = None
-                src.include_pol_cal = False
+
+        if missing_ephem:
+            QMessageBox.warning(
+                self, "Validation Error",
+                "An ephemeris file is required for sources in Fold mode.\n\n"
+                f"Missing: {', '.join(missing_ephem)}"
+            )
+            return False
+
+        if missing_dm:
+            QMessageBox.warning(
+                self, "Validation Error",
+                "A DM value (> 0) is required for sources in Coherent Search mode.\n\n"
+                f"Missing or invalid: {', '.join(missing_dm)}"
+            )
+            return False
 
         return True

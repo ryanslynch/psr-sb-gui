@@ -283,7 +283,7 @@ class ObservationModel:
     sources: list[Source] = field(default_factory=list)
     global_freq_range: str = "L-band"
     global_obs_mode: ObsMode = ObsMode.COHERENT_FOLD
-    per_source_config: bool = False
+    per_source_config: bool = True
     include_pol_cal: bool = False
     include_flux_cal: bool = False
     flux_cal_source: str = ""
