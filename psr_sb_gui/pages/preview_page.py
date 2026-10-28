@@ -554,11 +554,9 @@ class PreviewPage(QWizardPage):
 
         # Center frequencies
         if p.center_freqs:
-            center_freqs = p.center_freqs
-        elif band.windows:
-            center_freqs = list(band.windows)
+            center_freqs = sorted(p.center_freqs, reverse=True)
         else:
-            center_freqs = [band.center_freq]
+            center_freqs = band.get_center_freqs(obs_mode.is_coherent)
 
         rest_freq_str = ", ".join(str(f) for f in center_freqs)
         doppler_freq = center_freqs[0]
@@ -601,7 +599,10 @@ class PreviewPage(QWizardPage):
         lines.append(f"    vegas.numchan = {p.numchan}")
         lines.append(f"    vegas.outbits = {p.outbits}")
         lines.append(f"    vegas.scale = {p.scale}")
-        lines.append(f"    vegas.polnmode = '{p.polnmode.lower()}'")
+        # Only incoherent search may record total intensity; every other
+        # vegas.obsmode (including the cal modes) requires full Stokes.
+        polnmode = p.polnmode if vegas_obsmode == "search" else "FULL_STOKES"
+        lines.append(f"    vegas.polnmode = '{polnmode.lower()}'")
         lines.append("    vegas.subband = 1")
 
         # Fold-specific params

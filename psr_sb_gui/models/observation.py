@@ -40,17 +40,35 @@ class FreqBand:
     label: str
     receiver: str
     bandwidth: float  # MHz per window
-    windows: list[float] = field(default_factory=list)  # center freqs in MHz
+    # Window center freqs in MHz, listed from high to low
+    windows: list[float] = field(default_factory=list)
     center_freq: Optional[float] = None  # MHz, for single-window bands
+    # Window center freqs (high to low) when coherent dedispersion is used,
+    # if they differ from the incoherent ones
+    coherent_windows: Optional[list[float]] = None
+    supports_coherent: bool = True
 
-    @property
-    def description(self) -> str:
+    def get_center_freqs(self, is_coherent: bool) -> list[float]:
+        """Return the window center freqs (high to low) for a dedispersion mode."""
+        if is_coherent and self.coherent_windows:
+            return list(self.coherent_windows)
         if self.windows:
-            win_str = ", ".join(f"{w} MHz" for w in self.windows)
-            return (f"{self.receiver}  |  {len(self.windows)} windows "
+            return list(self.windows)
+        return [self.center_freq]
+
+    def describe(self, is_coherent: bool = False) -> str:
+        """One-line summary of the receiver and windows for a dedispersion mode."""
+        freqs = self.get_center_freqs(is_coherent and self.supports_coherent)
+        if len(freqs) > 1:
+            win_str = ", ".join(f"{w} MHz" for w in freqs)
+            text = (f"{self.receiver}  |  {len(freqs)} windows "
                     f"@ {win_str}  |  {self.bandwidth} MHz BW each")
-        return (f"{self.receiver}  |  {self.center_freq} MHz  "
-                f"|  {self.bandwidth} MHz BW")
+        else:
+            text = (f"{self.receiver}  |  {freqs[0]} MHz  "
+                    f"|  {self.bandwidth} MHz BW")
+        if not self.supports_coherent:
+            text += "  |  no coherent dedispersion"
+        return text
 
 
 FREQ_BANDS: dict[str, FreqBand] = {
@@ -58,11 +76,13 @@ FREQ_BANDS: dict[str, FreqBand] = {
     "820 MHz": FreqBand("820 MHz", "Rcvr_800", 200, center_freq=820),
     "L-band": FreqBand("L-band", "Rcvr1_2", 800, center_freq=1500),
     "S-band": FreqBand("S-band", "Rcvr2_3", 1500, center_freq=2165),
-    "UWBR": FreqBand("UWBR", "Rcvr_2500", 1500, windows=[1225, 2350, 3475]),
+    "UWBR": FreqBand("UWBR", "Rcvr_2500", 1500, windows=[3475, 2350, 1225]),
     "C-band": FreqBand("C-band", "Rcvr4_6", 1500,
-                        windows=[4312.5, 5437.5, 6562.5, 7687.5]),
+                        windows=[7687.5, 6562.5, 5437.5, 4312.5],
+                        coherent_windows=[7650.0, 5775.0, 4650.0]),
     "X-band": FreqBand("X-band", "Rcvr8_10", 1500,
-                        windows=[8250, 9375, 10500, 11625]),
+                        windows=[11625, 10500, 9375, 8250],
+                        supports_coherent=False),
 }
 
 FREQ_BAND_NAMES = list(FREQ_BANDS.keys())
@@ -179,6 +199,8 @@ def get_default_vegas_params(band_label: str, obs_mode: ObsMode) -> "VegasParams
     band = FREQ_BANDS[band_label]
     bw = int(band.bandwidth)
     is_coherent = obs_mode.is_coherent
+    if is_coherent and not band.supports_coherent:
+        raise ValueError(f"{band_label} does not support coherent dedispersion")
     is_fold = obs_mode.is_fold
 
     # Default numchan
@@ -225,10 +247,7 @@ def get_default_vegas_params(band_label: str, obs_mode: ObsMode) -> "VegasParams
         fold_dumptime = 10.0
 
     # Center frequencies from band definition
-    if band.windows:
-        center_freqs = list(band.windows)
-    else:
-        center_freqs = [band.center_freq]
+    center_freqs = band.get_center_freqs(is_coherent)
 
     return VegasParams(
         numchan=numchan,

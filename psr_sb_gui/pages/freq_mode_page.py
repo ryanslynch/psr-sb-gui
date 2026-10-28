@@ -148,6 +148,7 @@ class FreqModePage(QWizardPage):
             "Apply coherent dedispersion to remove interstellar dispersion in real time"
         )
         self.coherent_check.setChecked(True)
+        self.coherent_check.toggled.connect(self._update_band_info)
         mode_row.addWidget(self.coherent_check)
         mode_row.addStretch()
         global_layout.addLayout(mode_row)
@@ -244,12 +245,56 @@ class FreqModePage(QWizardPage):
     # --- Helpers ---
 
     def _update_band_info(self):
-        band_name = self.band_combo.currentText()
-        band = FREQ_BANDS.get(band_name)
+        # Update coherent availability first so the label reflects its final state
+        self._update_global_coherent_availability()
+        band = FREQ_BANDS.get(self.band_combo.currentText())
         if band:
-            self.band_info_label.setText(band.description)
+            self.band_info_label.setText(
+                band.describe(self.coherent_check.isChecked())
+            )
         else:
             self.band_info_label.setText("")
+
+    @staticmethod
+    def _set_coherent_available(cb, available, tooltip):
+        """Enable/disable a coherent checkbox, remembering its state while off."""
+        if available:
+            if not cb.isEnabled():
+                cb.setEnabled(True)
+                pref = cb.property("coherent_pref")
+                if pref is not None:
+                    cb.setChecked(bool(pref))
+        else:
+            if cb.isEnabled():
+                cb.setProperty("coherent_pref", cb.isChecked())
+                cb.setEnabled(False)
+            cb.setChecked(False)
+        cb.setToolTip(tooltip)
+
+    def _update_global_coherent_availability(self):
+        band = FREQ_BANDS.get(self.band_combo.currentText())
+        available = band is None or band.supports_coherent
+        tooltip = (
+            "Apply coherent dedispersion to remove interstellar dispersion in real time"
+            if available else
+            f"Coherent dedispersion is not available for {band.label}"
+        )
+        self._set_coherent_available(self.coherent_check, available, tooltip)
+
+    def _update_row_coherent_availability(self, row):
+        """Disable the Coherent DD checkbox for bands that can't use it."""
+        band_item = self.table.item(row, COL_BAND)
+        container = self.table.cellWidget(row, COL_COHERENT)
+        cb = container.findChild(QCheckBox) if container else None
+        band = FREQ_BANDS.get(band_item.text()) if band_item else None
+        if cb is None:
+            return
+        available = band is None or band.supports_coherent
+        tooltip = (
+            "" if available else
+            f"Coherent dedispersion is not available for {band.label}"
+        )
+        self._set_coherent_available(cb, available, tooltip)
 
     def _obs_mode_from_ui(self, mode_text, coherent):
         """Map UI controls to ObsMode enum."""
@@ -338,6 +383,7 @@ class FreqModePage(QWizardPage):
         cb.toggled.connect(lambda *_: self._update_column_visibility())
         layout.addWidget(cb)
         self.table.setCellWidget(row, COL_COHERENT, container)
+        self._update_row_coherent_availability(row)
 
     def _get_coherent_checked(self, row):
         """Return whether the coherent checkbox is checked for a row."""
@@ -406,8 +452,11 @@ class FreqModePage(QWizardPage):
                     label.setToolTip(file_path)
 
     def _on_cell_changed(self, row, col):
-        """React to mode column changes to update column visibility."""
-        if col == COL_MODE:
+        """React to band/mode column changes (coherent availability, column visibility)."""
+        if col == COL_BAND:
+            self._update_row_coherent_availability(row)
+            self._update_column_visibility()
+        elif col == COL_MODE:
             self._update_column_visibility()
 
     def _update_column_visibility(self):
@@ -668,6 +717,7 @@ class FreqModePage(QWizardPage):
         if mode_idx >= 0:
             self.mode_combo.setCurrentIndex(mode_idx)
         self.coherent_check.setChecked(coherent)
+        self._update_global_coherent_availability()
 
         # Pol cal
         self.pol_cal_check.setChecked(self.observation.include_pol_cal)
